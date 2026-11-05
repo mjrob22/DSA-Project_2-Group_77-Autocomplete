@@ -7,3 +7,5 @@ add_executable(DSA_Project2 main.cpp trie.h
         benchmark_trie.cpp)
 add_executable(benchmark_trie benchmark_trie.cpp trie.h)
 add_executable(test_trie test_trie.cpp trie.h)
+add_executable(benchmark_tst benchmark_tst.cpp tst.h)
+add_executable(test_tst test_tst.cpp tst.h)

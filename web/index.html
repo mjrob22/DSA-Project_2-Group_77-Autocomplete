@@ -1,0 +1,587 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>wordplay.</title>
+<!--
+  Wordplay: the web front end for the Group 77 autocomplete project.
+  Served by the C++ program (web_server.h). Every word, count and time on
+  this page comes from the Trie and the ternary search tree through /api.
+  Interface by Navjot Singh.
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@500;600;700;800&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --lavender: #F0EAFB;     /* page */
+    --plum: #312044;         /* text, structure */
+    --coral: #FF725E;        /* lines, bars, caret */
+    --coral-text: #C93A26;   /* coral that is readable as text */
+    --coral-on-plum: #FFB3A6;
+    --lilac: #D8CBEE;
+    --paper: #FFFCF7;        /* the search panel */
+    --rule: #C7B9DA;
+    --muted: #5C4B70;
+    --ghost: #C3B3DA;
+    --display: "Schibsted Grotesk", "Helvetica Neue", Arial, sans-serif;
+    --body: "IBM Plex Sans", "Segoe UI", system-ui, -apple-system, sans-serif;
+    color-scheme: light;
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body { margin: 0; background: var(--lavender); color: var(--plum); font-family: var(--body); font-size: 17px; line-height: 1.5; }
+  button, input { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid var(--coral-text); outline-offset: 2px; }
+
+  .wrap { max-width: 1280px; margin: 0 auto; padding-left: 56px; padding-right: 56px; }
+
+  /* header */
+  .top { border-bottom: 1px solid var(--plum); }
+  .top .wrap { min-height: 80px; display: flex; align-items: center; }
+  .mark { font-family: var(--display); font-weight: 800; font-size: 30px; letter-spacing: -0.02em; line-height: 1; }
+  .mark span { color: var(--coral); }
+
+  main.wrap { padding-top: 44px; padding-bottom: 56px; display: flex; flex-direction: column; gap: 56px; }
+
+  /* intro */
+  .intro { display: flex; flex-direction: column; gap: 12px; max-width: 760px; margin-bottom: -20px; }
+  h1 { margin: 0; font-family: var(--display); font-weight: 800; font-size: 52px; line-height: 1.05; letter-spacing: -0.015em; text-wrap: balance; }
+  .intro p { margin: 0; font-size: 19px; max-width: 58ch; }
+
+  /* search panel */
+  .panel { background: var(--paper); border: 1px solid var(--rule); border-radius: 12px; padding: 32px 40px 36px; display: flex; flex-direction: column; gap: 28px; }
+  .toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; }
+  .toolbar-group { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+  .toolbar-label { font-size: 16px; font-weight: 500; }
+  .seg { display: flex; border: 1px solid var(--plum); border-radius: 8px; overflow: hidden; }
+  .seg button { font-size: 16px; padding: 10px 18px; min-height: 44px; border: 0; background: transparent; cursor: pointer; white-space: nowrap; transition: background-color .12s ease-out; }
+  .seg button + button { border-left: 1px solid var(--plum); }
+  .seg button:hover { background: var(--lavender); }
+  .seg button[aria-pressed="true"] { background: var(--plum); color: var(--paper); font-weight: 600; }
+  .k-control { display: flex; align-items: center; gap: 12px; font-size: 16px; }
+  .k-control input { width: 180px; accent-color: var(--coral-text); }
+  .k-control b { display: inline-block; min-width: 2ch; text-align: right; font-variant-numeric: tabular-nums; }
+
+  .field { position: relative; border-bottom: 3px solid var(--rule); padding-bottom: 6px; transition: border-color .15s ease-out; }
+  .field:focus-within { border-bottom-color: var(--coral); }
+  .field input, .ghost { font-family: var(--display); font-weight: 700; font-size: clamp(48px, 8.5vw, 96px); line-height: 1.1; letter-spacing: -0.02em; }
+  .ghost { white-space: pre; overflow: hidden; pointer-events: none; }
+  .ghost .typed { color: transparent; }
+  .ghost .rest { color: var(--ghost); }
+  .field input { position: absolute; inset: 0 0 6px 0; width: 100%; border: 0; outline: none; background: transparent; padding: 0; color: var(--plum); caret-color: var(--coral); }
+  .field input::placeholder { color: var(--ghost); opacity: 1; }
+  .meta { margin: 0; font-size: 17px; min-height: 1.5em; }
+  .meta .err { color: var(--coral-text); font-weight: 600; }
+  .examples { display: inline-flex; flex-wrap: wrap; gap: 4px 14px; margin-left: 4px; }
+  .examples button { border: 0; background: none; padding: 2px 0; font-weight: 600; text-decoration: underline; text-decoration-color: var(--coral); text-decoration-thickness: 2px; text-underline-offset: 4px; cursor: pointer; }
+  .examples button:hover { color: var(--coral-text); }
+
+  .results { display: flex; flex-wrap: wrap; gap: 40px; }
+  .results[hidden] { display: none; }
+  .col-main { flex: 3 1 420px; min-width: 0; }
+  .col-side { flex: 2 1 300px; min-width: 0; display: flex; flex-direction: column; gap: 32px; padding-left: 40px; border-left: 1px solid var(--rule); }
+  .col-half { flex: 1 1 360px; min-width: 0; }
+  h2 { margin: 0; font-family: var(--display); font-size: 22px; font-weight: 700; line-height: 1.2; }
+  .list-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--plum); }
+  .list-head .time { font-family: var(--display); font-size: 28px; font-weight: 700; }
+  .list-head .time.win { color: var(--coral-text); }
+
+  ol.words { list-style: none; margin: 0; padding: 0; }
+  ol.words li + li button { border-top: 1px solid var(--rule); }
+  ol.words button { width: 100%; display: flex; align-items: baseline; gap: 20px; text-align: left; border: 0; background: transparent; cursor: pointer; padding: 14px 16px; font-family: var(--display); font-size: 32px; font-weight: 600; line-height: 1.15; overflow-wrap: anywhere; transition: background-color .12s ease-out; }
+  .compact ol.words button { font-size: 28px; padding: 12px 14px; gap: 18px; }
+  ol.words .n { font-family: var(--body); font-size: 15px; font-weight: 500; min-width: 20px; color: var(--muted); flex: none; }
+  ol.words .p { color: var(--coral-text); }
+  ol.words button:hover { background: var(--lavender); }
+  ol.words button.sel { background: var(--plum); color: var(--paper); }
+  ol.words button.sel .n { color: var(--lilac); }
+  ol.words button.sel .p { color: var(--coral-on-plum); }
+  ol.words button.differs { outline: 2px solid var(--coral-text); outline-offset: -2px; }
+
+  .timing { display: flex; flex-direction: column; gap: 14px; }
+  .bar-row { display: flex; flex-direction: column; gap: 6px; }
+  .bar-label { display: flex; justify-content: space-between; gap: 12px; font-size: 16px; }
+  .bar-label b { font-variant-numeric: tabular-nums; }
+  .bar { height: 12px; border-radius: 2px; background: var(--plum); transition: width .18s ease-out; }
+  .bar.tst { background: var(--coral); }
+  .bar-row.other { opacity: .55; }
+  .note { margin: 0; font-size: 16px; color: var(--muted); }
+  .next { display: flex; flex-direction: column; gap: 10px; padding-top: 24px; border-top: 1px solid var(--rule); }
+  .next-list { display: flex; flex-wrap: wrap; gap: 12px 28px; }
+  .next-item { display: flex; flex-direction: column; border: 0; background: none; padding: 0; text-align: left; cursor: pointer; }
+  .next-item .w { font-family: var(--display); font-size: 40px; font-weight: 700; line-height: 1.1; overflow-wrap: anywhere; }
+  .next-item .w span { color: var(--coral-text); }
+  .next-item .c { font-size: 15px; color: var(--muted); }
+  .next-item:hover .w { text-decoration: underline; text-decoration-color: var(--coral); text-decoration-thickness: 3px; text-underline-offset: 6px; }
+
+  .nothing { padding: 8px 0 4px; }
+  .nothing h2 { font-size: 32px; font-weight: 800; }
+  .nothing p { margin: 6px 0 0; font-size: 17px; }
+
+  /* sections below the panel */
+  .split { display: flex; flex-wrap: wrap; gap: 24px 56px; padding-top: 36px; border-top: 1px solid var(--plum); }
+  .split[hidden] { display: none; }
+  .split-text { flex: 1 1 260px; max-width: 340px; display: flex; flex-direction: column; gap: 12px; }
+  .split-text h2 { font-size: 32px; font-weight: 800; letter-spacing: -0.01em; line-height: 1.1; }
+  .split-text p { margin: 0; }
+  .split-body { flex: 999 1 600px; min-width: 0; display: flex; flex-direction: column; gap: 28px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 8px 24px; font-size: 16px; }
+  .legend span { display: flex; align-items: center; gap: 8px; }
+  .legend i { width: 14px; height: 14px; border-radius: 2px; background: var(--plum); display: block; }
+  .legend i.tst { background: var(--coral); }
+
+  .metric { display: flex; flex-direction: column; gap: 8px; }
+  .metric-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 4px 16px; }
+  .metric-head h3 { margin: 0; font-family: var(--display); font-size: 20px; font-weight: 700; }
+  .metric-head span { font-size: 16px; }
+  .metric-bars { display: grid; grid-template-columns: minmax(0, 1fr) 100px; align-items: center; gap: 6px 16px; font-variant-numeric: tabular-nums; }
+  .metric-bars .bar { height: 16px; }
+  .metric-bars .v { font-size: 17px; }
+  .metric-bars .v.win { font-weight: 600; }
+  .metric .note { font-size: 15px; }
+  .agree { margin: 0; padding-top: 20px; border-top: 1px solid var(--rule); }
+
+  .chart { display: flex; flex-direction: column; gap: 10px; }
+  .chart-area { display: flex; gap: 14px; }
+  .chart-axis { display: flex; flex-direction: column; justify-content: space-between; height: 200px; width: 64px; flex: none; text-align: right; font-size: 15px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .chart-cols { flex: 1; min-width: 0; height: 200px; display: grid; gap: 16px; align-items: end; border-bottom: 1px solid var(--plum); background-image: linear-gradient(var(--lilac) 1px, transparent 1px); background-size: 100% 100px; }
+  .chart-col { height: 100%; display: flex; justify-content: center; align-items: flex-end; gap: 6px; }
+  .chart-col i { display: block; width: 32%; max-width: 48px; border-radius: 2px 2px 0 0; background: var(--plum); transition: height .18s ease-out; }
+  .chart-col i.tst { background: var(--coral); }
+  .chart-labels { display: flex; gap: 14px; }
+  .chart-labels > span:first-child { width: 64px; flex: none; }
+  .chart-label-cols { flex: 1; min-width: 0; display: grid; gap: 16px; text-align: center; font-variant-numeric: tabular-nums; }
+  .chart-label-cols b { display: block; font-family: var(--display); font-size: 20px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .chart-label-cols small { font-size: 14px; color: var(--muted); }
+
+  footer { padding-top: 20px; border-top: 1px solid var(--rule); font-size: 15px; color: var(--muted); }
+
+  .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+  @media (max-width: 760px) {
+    .wrap { padding-left: 20px; padding-right: 20px; }
+    main.wrap { padding-top: 28px; gap: 40px; }
+    h1 { font-size: 40px; }
+    .intro p { font-size: 17px; }
+    .panel { padding: 22px 18px 26px; gap: 22px; }
+    .seg button { padding: 10px 11px; font-size: 15px; }
+    .col-side { padding-left: 0; border-left: 0; padding-top: 24px; border-top: 1px solid var(--rule); }
+    ol.words button { font-size: 26px; padding: 12px 10px; }
+    .compact ol.words button { font-size: 24px; }
+    .chart-axis, .chart-labels > span:first-child { width: 48px; }
+    .chart-label-cols small { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<header class="top"><div class="wrap"><span class="mark">wordplay<span>.</span></span></div></header>
+
+<main class="wrap">
+  <section class="intro">
+    <h1>Type the start of a word.</h1>
+    <p>Two data structures search <span id="wordCount">370,105</span> English words for everything that begins with your letters. They always find the same words, and you can watch which one answers first.</p>
+  </section>
+
+  <section class="panel" aria-label="Search">
+    <div class="toolbar">
+      <div class="toolbar-group">
+        <span class="toolbar-label" id="modeLabel">Search with</span>
+        <div class="seg" role="group" aria-labelledby="modeLabel">
+          <button type="button" data-mode="trie" aria-pressed="true">Trie</button>
+          <button type="button" data-mode="tst" aria-pressed="false">Ternary search tree</button>
+          <button type="button" data-mode="both" aria-pressed="false">Both</button>
+        </div>
+      </div>
+      <label class="k-control" for="k">Show <b id="kValue">6</b> words <input id="k" type="range" min="1" max="50" value="6"></label>
+    </div>
+
+    <div class="field">
+      <div class="ghost" aria-hidden="true"><span class="typed" id="ghostTyped"></span><span class="rest" id="ghostRest"></span>&#8203;</div>
+      <input id="q" type="text" aria-label="Start of a word" placeholder="Type something..." autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" maxlength="40" aria-describedby="meta">
+    </div>
+    <p class="meta" id="meta" aria-live="polite"></p>
+
+    <div class="results" id="single" hidden>
+      <div class="col-main">
+        <h2 id="listTitle" style="margin-bottom: 8px;"></h2>
+        <ol class="words" id="list" style="border-top: 1px solid var(--plum);"></ol>
+      </div>
+      <div class="col-side">
+        <div class="timing">
+          <h2>Time for this search</h2>
+          <div id="timeRows"></div>
+          <p class="note" id="timeNote"></p>
+        </div>
+        <div class="next" id="nextBox">
+          <h2>What could come next</h2>
+          <div class="next-list" id="nextList"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="results compact" id="both" hidden>
+      <div class="col-half">
+        <div class="list-head"><h2>Trie</h2><span class="time" id="trieTime"></span></div>
+        <ol class="words" id="trieList"></ol>
+      </div>
+      <div class="col-half">
+        <div class="list-head"><h2>Ternary search tree</h2><span class="time" id="tstTime"></span></div>
+        <ol class="words" id="tstList"></ol>
+      </div>
+    </div>
+
+    <div class="nothing" id="nothing" hidden>
+      <h2>No words down this path.</h2>
+      <p>Try a different combination.</p>
+    </div>
+  </section>
+
+  <section class="split" id="stepsSection" hidden aria-label="Search time after each letter">
+    <div class="split-text">
+      <h2>Search time after each letter</h2>
+      <p id="stepsNote">Every key you press runs a new search in both structures.</p>
+    </div>
+    <div class="split-body">
+      <div class="legend"><span><i></i>Trie</span><span><i class="tst"></i>Ternary search tree</span></div>
+      <div class="chart">
+        <div class="chart-area"><div class="chart-axis" id="axis"></div><div class="chart-cols" id="chartCols"></div></div>
+        <div class="chart-labels"><span></span><div class="chart-label-cols" id="chartLabels"></div></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="split" id="dictSection" hidden aria-label="Across the whole dictionary">
+    <div class="split-text">
+      <h2>Across the whole dictionary</h2>
+      <p id="dictNote">Measured when the program starts, on every word in the list. In every chart a shorter bar is better.</p>
+      <p>The Trie is bigger because each node keeps a slot for all 26 letters, used or not. A ternary search tree node only points to three others.</p>
+    </div>
+    <div class="split-body">
+      <div class="legend"><span><i></i>Trie</span><span><i class="tst"></i>Ternary search tree</span></div>
+      <div id="metrics" style="display: flex; flex-direction: column; gap: 28px;"></div>
+      <p class="agree" id="agree"></p>
+    </div>
+  </section>
+
+  <footer>Trie by Matthew Robertson, ternary search tree by Zain Khan, interface by Navjot Singh. Word list from dwyl/english-words.</footer>
+</main>
+
+<script>
+(function () {
+  "use strict";
+
+  var NAMES = { trie: "Trie", tst: "Ternary search tree" };
+  var EXAMPLES = ["wond", "play", "quiz", "zeb"];
+  var MAX_STEPS = 12;
+
+  var el = function (id) { return document.getElementById(id); };
+  var q = el("q"), meta = el("meta"), kInput = el("k");
+  var state = { mode: "trie", k: 6, prefix: "", data: null, selected: 0, request: null, failed: false };
+
+  // ------------------------------------------------------------ formatting
+  function commas(n) { return Number(n).toLocaleString("en-US"); }
+  function us(v) { return (v < 10 ? v.toFixed(2) : v.toFixed(1)) + " µs"; }
+  function ms(v) { return (v < 100 ? v.toFixed(1) : Math.round(v)) + " ms"; }
+  function mb(bytes) { return (bytes / 1048576).toFixed(1) + " MB"; }
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
+  function quoted(s) { return "“" + esc(s) + "”"; }
+  // "18% faster" for small gaps, "1.9 times faster" for big ones
+  function howMuch(small, big, word) {
+    if (!(small > 0) || !(big > 0)) return "";
+    var ratio = big / small;
+    if (ratio < 1.05) return "about the same";
+    if (word === "less") return Math.round((1 - small / big) * 100) + "% less";
+    if (ratio < 1.5) return Math.round((1 - small / big) * 100) + "% " + word;
+    return ratio.toFixed(1) + " times " + word;
+  }
+
+  // ------------------------------------------------------------ mode + k
+  document.querySelectorAll(".seg button").forEach(function (b) {
+    b.addEventListener("click", function () {
+      state.mode = b.getAttribute("data-mode");
+      document.querySelectorAll(".seg button").forEach(function (o) { o.setAttribute("aria-pressed", o === b ? "true" : "false"); });
+      render();
+      q.focus();
+    });
+  });
+  kInput.addEventListener("input", function () {
+    state.k = Number(kInput.value);
+    el("kValue").textContent = state.k;
+    search();
+  });
+
+  // ------------------------------------------------------------ typing
+  q.addEventListener("input", function () {
+    var clean = q.value.toLowerCase().replace(/[^a-z]/g, "");
+    if (clean !== q.value) q.value = clean;
+    state.prefix = clean;
+    state.selected = 0;
+    search();
+  });
+
+  q.addEventListener("keydown", function (e) {
+    var words = currentWords();
+    if (e.key === "ArrowDown" && words.length) {
+      e.preventDefault(); state.selected = (state.selected + 1) % words.length; render();
+    } else if (e.key === "ArrowUp" && words.length) {
+      e.preventDefault(); state.selected = (state.selected - 1 + words.length) % words.length; render();
+    } else if (e.key === "Enter" && words.length) {
+      e.preventDefault(); choose(words[state.selected]);
+    } else if (e.key === "Tab" && !e.shiftKey && ghostRest()) {
+      e.preventDefault(); choose(words[0]);
+    } else if (e.key === "Escape" && q.value) {
+      e.preventDefault(); setPrefix("");
+    }
+  });
+
+  function setPrefix(p) {
+    q.value = p;
+    state.prefix = p;
+    state.selected = 0;
+    search();
+  }
+  function choose(word) {
+    if (!word) return;
+    setPrefix(word);
+    q.focus();
+    q.setSelectionRange(word.length, word.length);
+  }
+
+  // ------------------------------------------------------------ talking to the C++ program
+  function search() {
+    if (state.request) state.request.abort();
+    if (!state.prefix) { state.data = null; render(); return; }
+    var controller = new AbortController();
+    state.request = controller;
+    var url = "/api/suggest?mode=both&k=" + state.k + "&prefix=" + encodeURIComponent(state.prefix);
+    fetch(url, { signal: controller.signal })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (data.error) throw new Error(data.error);
+        if (data.prefix !== state.prefix) return;      // an older answer arriving late
+        state.failed = false;
+        state.data = data;
+        if (state.selected >= data.results.trie.words.length) state.selected = 0;
+        render();
+      })
+      .catch(function (err) {
+        if (err.name === "AbortError") return;
+        state.failed = true;
+        state.data = null;
+        render();
+      });
+  }
+
+  function loadStats() {
+    fetch("/api/stats").then(function (r) { return r.json(); }).then(renderStats).catch(function () {});
+  }
+
+  // ------------------------------------------------------------ drawing
+  function currentWords() {
+    if (!state.data) return [];
+    var id = state.mode === "tst" ? "tst" : "trie";
+    var r = state.data.results[id];
+    return r ? r.words : [];
+  }
+  function ghostRest() {
+    var w = currentWords()[0];
+    if (!w || !state.prefix || w.indexOf(state.prefix) !== 0 || w.length === state.prefix.length) return "";
+    return w.slice(state.prefix.length);
+  }
+
+  function wordButtons(list, words, prefixLen, otherWords) {
+    list.innerHTML = "";
+    words.forEach(function (w, i) {
+      var li = document.createElement("li");
+      var b = document.createElement("button");
+      b.type = "button";
+      if (i === state.selected) b.className = "sel";
+      if (otherWords && otherWords[i] !== w) b.className += " differs";
+      b.innerHTML = '<span class="n">' + (i + 1) + '</span><span><span class="p">' + esc(w.slice(0, prefixLen)) + "</span>" + esc(w.slice(prefixLen)) + "</span>";
+      b.setAttribute("aria-label", w);
+      b.addEventListener("click", function () { choose(w); });
+      li.appendChild(b);
+      list.appendChild(li);
+    });
+  }
+
+  function render() {
+    var d = state.data, p = state.prefix;
+    var single = el("single"), both = el("both"), nothing = el("nothing"), steps = el("stepsSection");
+
+    // ghost completion in the input, shrinking the type if the word gets too long
+    var rest = ghostRest();
+    el("ghostTyped").textContent = p;
+    el("ghostRest").textContent = rest;
+    fitInput();
+
+    single.hidden = both.hidden = nothing.hidden = steps.hidden = true;
+
+    if (state.failed) {
+      meta.innerHTML = '<span class="err">Can’t reach the program.</span> Make sure it is still running, then refresh this page.';
+      return;
+    }
+    if (!p) {
+      meta.innerHTML = 'Every great word starts somewhere. Try <span class="examples">' +
+        EXAMPLES.map(function (x) { return '<button type="button" data-ex="' + x + '">' + x + "</button>"; }).join("") + "</span>";
+      meta.querySelectorAll("button[data-ex]").forEach(function (b) {
+        b.addEventListener("click", function () { choose(b.getAttribute("data-ex")); });
+      });
+      return;
+    }
+    if (!d) return;   // first answer for this prefix is on its way
+
+    if (d.total === 0) {
+      meta.textContent = "No words start with “" + p + "”.";
+      nothing.hidden = false;
+      return;
+    }
+
+    var trie = d.results.trie, tst = d.results.tst;
+    var shown = trie.words.length;
+    var count = commas(d.total) + (d.total === 1 ? " word starts" : " words start") + " with " + quoted(p) + ".";
+
+    if (state.mode === "both") {
+      meta.innerHTML = count + (d.match
+        ? " Both structures returned the same " + shown + ", in the same order."
+        : ' <span class="err">The two structures returned different words.</span>');
+      both.hidden = false;
+      var trieWins = trie.us <= tst.us;
+      el("trieTime").textContent = us(trie.us);
+      el("tstTime").textContent = us(tst.us);
+      el("trieTime").className = "time" + (trieWins ? " win" : "");
+      el("tstTime").className = "time" + (trieWins ? "" : " win");
+      wordButtons(el("trieList"), trie.words, p.length, tst.words);
+      wordButtons(el("tstList"), tst.words, p.length, trie.words);
+      renderSteps(d.steps);
+      return;
+    }
+
+    // one structure
+    meta.innerHTML = count + (d.isWord ? " It is a word itself." : "");
+    single.hidden = false;
+    var mine = state.mode, other = mine === "trie" ? "tst" : "trie";
+    var words = d.results[mine].words;
+    el("listTitle").textContent = (words.length < d.total ? "First " + words.length + " of " + commas(d.total) : "All " + words.length) + ", in alphabetical order";
+    wordButtons(el("list"), words, p.length);
+
+    var a = d.results[mine].us, b = d.results[other].us, max = Math.max(a, b) || 1;
+    el("timeRows").innerHTML =
+      timeRow(NAMES[mine], a, max, mine, false) + timeRow(NAMES[other] + " (same search)", b, max, other, true);
+    var faster = a <= b ? NAMES[mine] : NAMES[other];
+    var diff = howMuch(Math.min(a, b), Math.max(a, b), "faster");
+    el("timeNote").textContent = (diff === "about the same" ? "Both took about the same time." : "The " + faster.toLowerCase().replace("trie", "Trie") + " answered " + diff + ".") +
+      " A microsecond (µs) is a millionth of a second.";
+
+    var nb = el("nextBox"), nl = el("nextList");
+    nl.innerHTML = "";
+    if (!d.next.length) {
+      nl.innerHTML = '<p class="note" style="margin:0">No longer words start with ' + quoted(p) + ".</p>";
+    } else {
+      d.next.forEach(function (n) {
+        var b2 = document.createElement("button");
+        b2.type = "button"; b2.className = "next-item";
+        b2.innerHTML = '<span class="w">' + esc(p) + "<span>" + n.letter + '</span></span><span class="c">' + commas(n.count) + (n.count === 1 ? " word" : " words") + "</span>";
+        b2.addEventListener("click", function () { choose(p + n.letter); });
+        nl.appendChild(b2);
+      });
+    }
+    nb.hidden = false;
+  }
+
+  // The big text starts at its normal size and shrinks (down to 36px) until the
+  // typed letters plus the faint completion fit on one line.
+  function fitInput() {
+    var ghost = document.querySelector(".ghost");
+    ghost.style.fontSize = q.style.fontSize = "";
+    var size = parseFloat(getComputedStyle(ghost).fontSize);
+    var room = ghost.clientWidth, need = ghost.scrollWidth;
+    if (need > room && room > 0) {
+      size = Math.max(36, Math.floor(size * room / need) - 1);
+      ghost.style.fontSize = q.style.fontSize = size + "px";
+      if (ghost.scrollWidth > ghost.clientWidth + 1) el("ghostRest").textContent = "";
+    }
+  }
+
+  function timeRow(name, value, max, id, isOther) {
+    return '<div class="bar-row' + (isOther ? " other" : "") + '"><div class="bar-label"><span>' + esc(name) +
+      "</span><b>" + us(value) + '</b></div><div class="bar ' + id + '" style="width:' + Math.max(2, value / max * 100).toFixed(1) + '%"></div></div>';
+  }
+
+  // round the chart's top value up to a tidy number
+  function niceMax(v) {
+    var steps = [0.1, 0.2, 0.4, 0.5, 0.8, 1, 1.5, 2, 4, 5, 8, 10, 20, 40, 50, 100];
+    for (var i = 0; i < steps.length; i++) if (v <= steps[i]) return steps[i];
+    return Math.ceil(v);
+  }
+
+  function renderSteps(stepsData) {
+    if (!stepsData || !stepsData.length) return;
+    var data = stepsData.slice(-MAX_STEPS);
+    var top = niceMax(Math.max.apply(null, data.map(function (s) { return Math.max(s.trie, s.tst); })));
+    var cols = el("chartCols"), labels = el("chartLabels");
+    var tmpl = "repeat(" + data.length + ", minmax(0, 1fr))";
+    cols.style.gridTemplateColumns = labels.style.gridTemplateColumns = tmpl;
+    el("axis").innerHTML = "<span>" + top + " µs</span><span>" + (top / 2) + " µs</span><span>0</span>";
+    cols.innerHTML = data.map(function (s) {
+      return '<div class="chart-col" title="' + esc(s.prefix) + ": Trie " + us(s.trie) + ", ternary search tree " + us(s.tst) + '">' +
+        '<i style="height:' + (s.trie / top * 100).toFixed(1) + '%"></i><i class="tst" style="height:' + (s.tst / top * 100).toFixed(1) + '%"></i></div>';
+    }).join("");
+    labels.innerHTML = data.map(function (s) {
+      return "<div><b>" + esc(s.prefix) + "</b><small>" + s.trie.toFixed(2) + " · " + s.tst.toFixed(2) + "</small></div>";
+    }).join("");
+    var tstWins = data.filter(function (s) { return s.tst < s.trie; }).length;
+    var note = "Every key you press runs a new search in both structures.";
+    if (tstWins === data.length) note += " The ternary search tree was faster after every letter of " + quoted(state.prefix) + ".";
+    else if (tstWins === 0) note += " The Trie was faster after every letter of " + quoted(state.prefix) + ".";
+    else note += " The ternary search tree was faster after " + tstWins + " of " + data.length + " letters.";
+    if (stepsData.length > MAX_STEPS) note += " Showing the last " + MAX_STEPS + " letters.";
+    el("stepsNote").innerHTML = note;
+    el("stepsSection").hidden = false;
+  }
+
+  function renderStats(s) {
+    var t = s.structures.filter(function (x) { return x.id === "trie"; })[0];
+    var u = s.structures.filter(function (x) { return x.id === "tst"; })[0];
+    el("wordCount").textContent = commas(s.words);
+    if (!t || !u) return;
+    el("dictNote").textContent = "Measured when the program starts, on all " + commas(s.words) + " words. In every chart a shorter bar is better.";
+
+    function metric(title, a, b, fmt, word, note) {
+      var max = Math.max(a, b) || 1, tstBetter = b < a;
+      var verdict = howMuch(Math.min(a, b), Math.max(a, b), word);
+      var who = tstBetter ? "Ternary search tree" : "Trie";
+      var head = verdict === "about the same" ? "About the same for both" :
+        word === "less" ? who + " uses <b>" + verdict + "</b>" : who + " is <b>" + verdict + "</b>";
+      return '<div class="metric"><div class="metric-head"><h3>' + title + "</h3><span>" + head + "</span></div>" +
+        '<div class="metric-bars">' +
+        '<div class="bar" style="width:' + (a / max * 100).toFixed(1) + '%"></div><span class="v' + (tstBetter ? "" : " win") + '">' + fmt(a) + "</span>" +
+        '<div class="bar tst" style="width:' + (b / max * 100).toFixed(1) + '%"></div><span class="v' + (tstBetter ? " win" : "") + '">' + fmt(b) + "</span>" +
+        "</div>" + (note ? '<p class="note">' + note + "</p>" : "") + "</div>";
+    }
+    el("metrics").innerHTML =
+      metric("Time to load all words", t.buildMs, u.buildMs, ms, "faster") +
+      metric("Average search", t.avgQueryUs, u.avgQueryUs, us, "faster",
+        "Average of " + commas(s.benchmark.prefixes) + " random 1 to 3 letter prefixes, " + s.benchmark.k + " results each") +
+      metric("Memory used", t.memoryBytes, u.memoryBytes, mb, "less",
+        t.nodeBytes + " bytes per Trie node vs. " + u.nodeBytes + " bytes per ternary search tree node, " +
+        commas(t.nodeCount) + " and " + commas(u.nodeCount) + " nodes");
+    el("agree").innerHTML = s.agreement.mismatches === 0
+      ? "<b>Same answers every time.</b> Both structures returned identical words for all " + commas(s.agreement.checks) + " one, two and three letter prefixes."
+      : '<b class="err">' + commas(s.agreement.mismatches) + " of " + commas(s.agreement.checks) + " prefixes gave different answers.</b>";
+    el("dictSection").hidden = false;
+  }
+
+  window.addEventListener("resize", function () { if (state.data) render(); });
+
+  // ------------------------------------------------------------ start
+  render();
+  loadStats();
+  q.focus();
+})();
+</script>
+</body>
+</html>
